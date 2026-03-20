@@ -152,6 +152,14 @@ function formatTime(t) {
   return h + ":" + String(m).padStart(2,"0") + ":" + String(sec).padStart(2,"0");
 }
 
+function autoFormatTime(raw) {
+  // Strip everything except digits
+  const digits = raw.replace(/\D/g, "").slice(0, 6);
+  if (digits.length <= 2) return digits;
+  if (digits.length <= 4) return digits.slice(0,2) + ":" + digits.slice(2);
+  return digits.slice(0,2) + ":" + digits.slice(2,4) + ":" + digits.slice(4);
+}
+
 function mergeRuns(fbData) {
   return BASE_PLAN.map((r, i) => ({
     ...r, id: i,
@@ -340,6 +348,7 @@ function App() {
   const plannedKm   = runs.reduce((s,r) => s+r.distance, 0);
   const progress    = Math.round((done.length / runs.length) * 100);
   const totalActKm  = activities.reduce((s,a) => s+parseFloat(a.distance||0), 0);
+  const combinedKm  = totalActKm > totalKm ? totalActKm : totalKm;
 
   const todayD = new Date(); todayD.setHours(0,0,0,0);
   const currentWeek = (() => {
@@ -394,7 +403,7 @@ function App() {
             {[
               {label:"Days to Race", value:daysLeft,                        icon:"📅",color:"#e8b04b"},
               {label:"Sessions Done",value:`${done.length}/${runs.length}`, icon:"✅",color:"#4dd0e1"},
-              {label:"KM Logged",    value:`${totalKm.toFixed(1)}km`,       icon:"🏃",color:"#81c784"},
+              {label:"KM Logged",    value:`${combinedKm.toFixed(1)}km`,    icon:"🏃",color:"#81c784"},
               {label:"Plan Progress",value:`${progress}%`,                  icon:"📈",color:"#f48fb1"},
             ].map(s => (
               <div key={s.label} style={{background:"rgba(255,255,255,0.08)",borderRadius:12,padding:"14px 16px",backdropFilter:"blur(10px)"}}>
@@ -516,7 +525,7 @@ function App() {
                   </div>
                   <div style={{fontSize:13,lineHeight:2.1,color:"#555"}}>
                     <div>Sessions: <strong>{done.length}/{runs.length}</strong></div>
-                    <div>KM done: <strong>{totalKm.toFixed(1)}km</strong></div>
+                    <div>KM done: <strong>{combinedKm.toFixed(1)}km</strong></div>
                     <div>KM planned: <strong>{plannedKm.toFixed(1)}km</strong></div>
                     <div>Days left: <strong>{daysLeft}</strong></div>
                   </div>
@@ -548,7 +557,7 @@ function App() {
                 {[
                   {label:"Date",           el:<input type="date" value={actForm.date} onChange={e=>setActForm(p=>({...p,date:e.target.value}))} style={{width:"100%",padding:"8px 10px",border:"1px solid #e5e0d8",borderRadius:8,fontFamily:"inherit",fontSize:13}}/>},
                   {label:"Distance (km)",  el:<input type="number" step="0.1" placeholder="e.g. 10.5" value={actForm.distance} onChange={e=>setActForm(p=>({...p,distance:e.target.value}))} style={{width:"100%",padding:"8px 10px",border:"1px solid #e5e0d8",borderRadius:8,fontFamily:"inherit",fontSize:13}}/>},
-                  {label:"Time (hh:mm:ss)",el:<input type="text" placeholder="e.g. 1:05:30" value={actForm.time} onChange={e=>setActForm(p=>({...p,time:e.target.value}))} style={{width:"100%",padding:"8px 10px",border:"1px solid #e5e0d8",borderRadius:8,fontFamily:"inherit",fontSize:13}}/>},
+                  {label:"Duration",el:<input type="text" placeholder="hhmmss" inputMode="numeric" value={actForm.time} onChange={e=>setActForm(p=>({...p,time:autoFormatTime(e.target.value)}))} style={{width:"100%",padding:"8px 10px",border:"1px solid #e5e0d8",borderRadius:8,fontFamily:"inherit",fontSize:13,letterSpacing:"0.05em"}}/>},
                   {label:"Type",           el:<select value={actForm.type} onChange={e=>setActForm(p=>({...p,type:e.target.value}))} style={{width:"100%",padding:"8px 10px",border:"1px solid #e5e0d8",borderRadius:8,fontFamily:"inherit",fontSize:13}}>
                     <option>Easy Run</option><option>Long Run</option><option>Tempo Run</option><option>Intervals</option><option>Marathon Pace</option><option>Race</option><option>Recovery</option>
                   </select>},
