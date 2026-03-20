@@ -203,7 +203,7 @@ function AIInsights({ runs }) {
       recovery:  `You are an elite marathon coach. The athlete has ${daysLeft} days until their marathon. Give specific recovery advice for this stage — what to prioritise, what to avoid, practical tips. 3–4 sentences, actionable.`,
     };
     try {
-      const res  = await fetch("https://api.anthropic.com/v1/messages", {
+      const res  = await fetch("https://claude-proxy.anthony-omisade.workers.dev/", {
         method:"POST", headers:{"Content-Type":"application/json"},
         body: JSON.stringify({ model:"claude-sonnet-4-20250514", max_tokens:1000,
           messages:[{role:"user", content:prompts[topic]}] }),
