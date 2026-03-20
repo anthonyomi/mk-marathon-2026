@@ -353,7 +353,7 @@ function App() {
   const plannedKm   = runs.reduce((s,r) => s+r.distance, 0);
   const progress    = Math.round((done.length / runs.length) * 100);
   const totalActKm  = activities.reduce((s,a) => s+parseFloat(a.distance||0), 0);
-  const combinedKm  = totalActKm > totalKm ? totalActKm : totalKm;
+  const combinedKm  = totalActKm + totalKm;
 
   const todayD = new Date(); todayD.setHours(0,0,0,0);
   const currentWeek = (() => {
