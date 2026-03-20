@@ -142,6 +142,16 @@ function fbUpdate(path, val)  { return window._fb.update(fbRef(path), val); }
 function fbListen(path, cb)   { return window._fb.onValue(fbRef(path), snap => cb(snap.val())); }
 
 /* ─── Merge Firebase overrides into base plan ───────────────────────── */
+function formatTime(t) {
+  if (!t) return null;
+  if (isNaN(t)) return String(t);
+  const s = parseInt(t);
+  const h = Math.floor(s / 3600);
+  const m = Math.floor((s % 3600) / 60);
+  const sec = s % 60;
+  return h + ":" + String(m).padStart(2,"0") + ":" + String(sec).padStart(2,"0");
+}
+
 function mergeRuns(fbData) {
   return BASE_PLAN.map((r, i) => ({
     ...r, id: i,
@@ -569,7 +579,7 @@ function App() {
                   <div style={{display:"flex",alignItems:"center",gap:12}}>
                     <div style={{textAlign:"right"}}>
                       <div style={{fontWeight:700,color:"#FC4C02",fontSize:15}}>{a.distance}km</div>
-                      {a.time && <div style={{fontSize:12,color:"#aaa"}}>{a.time}</div>}
+                      {a.time && <div style={{fontSize:12,color:"#aaa"}}>{formatTime(a.time)}</div>}
                     </div>
                     <button onClick={() => deleteActivity(a.key)} style={{background:"none",border:"none",cursor:"pointer",color:"#ddd",fontSize:18,padding:"4px 6px",lineHeight:1}} title="Delete">×</button>
                   </div>
