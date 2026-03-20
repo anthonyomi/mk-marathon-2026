@@ -8,192 +8,188 @@
 <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
 <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
 <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+<!-- Firebase -->
+<script type="module" id="firebase-init">
+  import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js";
+  import { getDatabase, ref, onValue, set, update } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-database.js";
+
+  const firebaseConfig = {
+    apiKey: "AIzaSyBsZEJ2haSOGXT0bAoDGljDwYKNatJK_qo",
+    authDomain: "mk-marathon-2026-dashboard.firebaseapp.com",
+    databaseURL: "https://mk-marathon-2026-dashboard-default-rtdb.europe-west1.firebasedatabase.app",
+    projectId: "mk-marathon-2026-dashboard",
+    storageBucket: "mk-marathon-2026-dashboard.firebasestorage.app",
+    messagingSenderId: "157168966806",
+    appId: "1:157168966806:web:b1fdadaf1aa750923436b7"
+  };
+
+  const app = initializeApp(firebaseConfig);
+  const db  = getDatabase(app);
+
+  // Expose Firebase helpers globally so the React app can use them
+  window._fb = { db, ref, onValue, set, update };
+  window.dispatchEvent(new Event("firebase-ready"));
+</script>
 <style>
   *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
   body { background: #f7f4ef; font-family: 'DM Sans', 'Segoe UI', sans-serif; }
-  @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:0.4} }
-  @keyframes fadeIn { from{opacity:0;transform:translateY(10px)} to{opacity:1;transform:translateY(0)} }
-  @keyframes spin { to { transform: rotate(360deg); } }
-  .run-card { transition: transform 0.2s, box-shadow 0.2s; }
+  @keyframes pulse    { 0%,100%{opacity:1} 50%{opacity:0.4} }
+  @keyframes fadeIn   { from{opacity:0;transform:translateY(10px)} to{opacity:1;transform:translateY(0)} }
+  @keyframes slideIn  { from{transform:translateY(60px);opacity:0} to{transform:translateY(0);opacity:1} }
+  @keyframes spin     { to{transform:rotate(360deg)} }
+  .run-card  { transition: transform 0.2s, box-shadow 0.2s; }
   .run-card:hover { transform: translateY(-2px); box-shadow: 0 8px 24px rgba(0,0,0,0.1) !important; }
-  .tab-btn:hover { background: #e8e4de !important; }
-  .fade-in { animation: fadeIn 0.3s ease; }
+  .tab-btn:hover  { background: #e8e4de !important; }
+  .fade-in   { animation: fadeIn 0.3s ease; }
   ::-webkit-scrollbar { width: 6px; }
   ::-webkit-scrollbar-track { background: #f0ede8; }
   ::-webkit-scrollbar-thumb { background: #ccc; border-radius: 3px; }
   textarea:focus, input:focus, select:focus { outline: 2px solid #1a1a2e; outline-offset: 1px; }
+  .sync-dot { width:8px; height:8px; border-radius:50%; display:inline-block; margin-right:6px; }
+  .sync-dot.online  { background:#22c55e; }
+  .sync-dot.offline { background:#f59e0b; animation: pulse 1.5s infinite; }
+  .sync-dot.loading { background:#60a5fa; animation: pulse 0.8s infinite; }
   @media (max-width: 640px) {
-    .stats-grid { grid-template-columns: repeat(2, 1fr) !important; }
-    .two-col { grid-template-columns: 1fr !important; }
-    .run-grid { grid-template-columns: 50px 1fr !important; }
-    .run-actions { flex-direction: row !important; justify-content: flex-start; margin-top: 8px; }
-    .tab-label { display: none; }
-    .header-pad { padding: 28px 16px 24px !important; }
-    .content-pad { padding: 0 16px !important; }
-    .strava-form { grid-template-columns: 1fr 1fr !important; }
+    .stats-grid   { grid-template-columns: repeat(2,1fr) !important; }
+    .two-col      { grid-template-columns: 1fr !important; }
+    .strava-grid  { grid-template-columns: 1fr 1fr !important; }
+    .tab-label    { display: none; }
+    .header-pad   { padding: 28px 16px 24px !important; }
+    .content-pad  { padding: 0 16px !important; }
   }
 </style>
 </head>
 <body>
-<div id="root"></div>
+<div id="root">
+  <!-- Loading screen shown before React mounts -->
+  <div style="min-height:100vh;display:flex;flex-direction:column;align-items:center;justify-content:center;background:#f7f4ef;gap:16px;">
+    <div style="width:40px;height:40px;border:3px solid #e5e0d8;border-top-color:#1a1a2e;border-radius:50%;animation:spin 0.8s linear infinite;"></div>
+    <p style="font-family:'DM Sans',sans-serif;color:#aaa;font-size:14px;">Connecting to Firebase…</p>
+  </div>
+</div>
 
 <script type="text/babel">
-const { useState, useEffect, useCallback } = React;
+const { useState, useEffect, useCallback, useRef } = React;
 
+/* ─── Data ─────────────────────────────────────────────────────────── */
 const RACE_DATE = new Date("2026-05-04");
 
 function getDaysUntilRace() {
-  const today = new Date();
-  today.setHours(0,0,0,0);
-  return Math.max(0, Math.ceil((RACE_DATE - today) / (1000*60*60*24)));
+  const t = new Date(); t.setHours(0,0,0,0);
+  return Math.max(0, Math.ceil((RACE_DATE - t) / 86400000));
 }
 
 const BASE_PLAN = [
-  { week:1, date:"2026-03-10", day:"Tue", type:"Easy Run", distance:6, pace:"6:30", description:"Easy base run. Conversational pace throughout.", completed:true, notes:"Week 1 done ✓" },
-  { week:1, date:"2026-03-12", day:"Thu", type:"Easy Run", distance:5, pace:"6:30", description:"Short easy effort to prepare legs for the weekend.", completed:true, notes:"" },
-  { week:1, date:"2026-03-15", day:"Sun", type:"Long Run", distance:24, pace:"6:45", description:"Week 1 anchor long run — 24km. Foundation building.", completed:true, notes:"Completed ✓" },
-  { week:2, date:"2026-03-17", day:"Tue", type:"Easy Run", distance:6, pace:"6:30", description:"Easy effort. Keep HR low and focus on breathing rhythm.", completed:false, notes:"" },
-  { week:2, date:"2026-03-19", day:"Thu", type:"Tempo Run", distance:7, pace:"5:50", description:"Warm up 1.5km · 4km comfortably hard · cool down 1.5km. Controlled but challenging.", completed:false, notes:"" },
-  { week:2, date:"2026-03-22", day:"Sun", type:"Long Run", distance:26, pace:"6:45", description:"THIS WEEKEND — 26km. Take a gel at 45 & 90 mins. Slow and conversational throughout.", completed:false, notes:"" },
-  { week:3, date:"2026-03-24", day:"Tue", type:"Easy Run", distance:5, pace:"6:40", description:"Recovery week — deliberately short and easy. Your body is adapting from last week.", completed:false, notes:"" },
-  { week:3, date:"2026-03-26", day:"Thu", type:"Easy Run", distance:5, pace:"6:40", description:"Short and relaxed. No pace targets — just move your legs.", completed:false, notes:"" },
-  { week:3, date:"2026-03-29", day:"Sun", type:"Long Run", distance:22, pace:"6:50", description:"Recovery long run — 22km. Easier than last week by design. Run by feel, not pace.", completed:false, notes:"" },
-  { week:4, date:"2026-03-31", day:"Tue", type:"Intervals", distance:7, pace:"5:10", description:"5×1km at 5k effort with 90s recovery jog. 1km warm up + 1km cool down included.", completed:false, notes:"" },
-  { week:4, date:"2026-04-02", day:"Thu", type:"Easy Run", distance:6, pace:"6:30", description:"Easy shakeout after Tuesday intervals. Genuinely easy — don't be a hero.", completed:false, notes:"" },
-  { week:4, date:"2026-04-05", day:"Sun", type:"Long Run", distance:28, pace:"6:45", description:"Big step up to 28km. Dress rehearsal for race nutrition — practise exactly what you'll use.", completed:false, notes:"" },
-  { week:5, date:"2026-04-07", day:"Tue", type:"Tempo Run", distance:8, pace:"5:50", description:"Warm up 2km · 5km at tempo (comfortably hard) · cool down 1km.", completed:false, notes:"" },
-  { week:5, date:"2026-04-09", day:"Thu", type:"Easy Run", distance:6, pace:"6:30", description:"Easy effort. Optional 4×20s strides at the end to keep legs feeling sharp.", completed:false, notes:"" },
-  { week:5, date:"2026-04-12", day:"Sun", type:"Long Run", distance:30, pace:"6:45", description:"30km — your biggest run yet. Slow is fast here. Fuel every 40 mins without fail.", completed:false, notes:"" },
-  { week:6, date:"2026-04-14", day:"Tue", type:"Marathon Pace", distance:9, pace:"6:30", description:"2km warm up · 5km at target race pace (6:30/km) · 2km cool down. Hard but controlled.", completed:false, notes:"" },
-  { week:6, date:"2026-04-16", day:"Thu", type:"Easy Run", distance:6, pace:"6:30", description:"Keep it easy — fresh legs matter more than extra fitness now.", completed:false, notes:"" },
-  { week:6, date:"2026-04-19", day:"Sun", type:"Long Run", distance:32, pace:"6:45", description:"PEAK LONG RUN — 32km (20 miles). Your crowning training achievement. After this, it's all taper.", completed:false, notes:"" },
-  { week:7, date:"2026-04-21", day:"Tue", type:"Easy Run", distance:6, pace:"6:30", description:"Taper begins — volume drops sharply. Your fitness is banked. Trust it.", completed:false, notes:"" },
-  { week:7, date:"2026-04-23", day:"Thu", type:"Marathon Pace", distance:5, pace:"6:30", description:"1km warm up · 3km at race pace · 1km cool down. Short, sharp, confident.", completed:false, notes:"" },
-  { week:7, date:"2026-04-26", day:"Sun", type:"Long Run", distance:22, pace:"6:45", description:"Final long run — 22km. Keep it easy and enjoyable. Last big confidence boost before race day.", completed:false, notes:"" },
-  { week:8, date:"2026-04-28", day:"Tue", type:"Easy Run", distance:6, pace:"6:40", description:"Easy 6km. No pressure — just keep the legs ticking over.", completed:false, notes:"" },
-  { week:8, date:"2026-04-30", day:"Thu", type:"Easy Shake-out", distance:4, pace:"6:45", description:"Short and easy. After today, stay off your feet as much as possible.", completed:false, notes:"" },
-  { week:8, date:"2026-05-02", day:"Sat", type:"Easy Shake-out", distance:3, pace:"6:50", description:"10–15 min gentle jog. Loosen the legs, nothing more. Eat well and rest.", completed:false, notes:"" },
-  { week:8, date:"2026-05-04", day:"Mon", type:"RACE DAY 🏁", distance:42.2, pace:"6:30", description:"Milton Keynes Marathon! Start slow, trust your training, run your own race. You've got this!", completed:false, notes:"" },
+  {week:1,date:"2026-03-10",day:"Tue",type:"Easy Run",       distance:6,   pace:"6:30",description:"Easy base run. Conversational pace throughout.",                                                    completed:true,  notes:"Week 1 done ✓"},
+  {week:1,date:"2026-03-12",day:"Thu",type:"Easy Run",       distance:5,   pace:"6:30",description:"Short easy effort to prepare legs for the weekend.",                                                 completed:true,  notes:""},
+  {week:1,date:"2026-03-15",day:"Sun",type:"Long Run",       distance:24,  pace:"6:45",description:"Week 1 anchor long run — 24km. Foundation building.",                                               completed:true,  notes:"Completed ✓"},
+  {week:2,date:"2026-03-17",day:"Tue",type:"Easy Run",       distance:6,   pace:"6:30",description:"Easy effort. Keep HR low and focus on breathing rhythm.",                                           completed:false, notes:""},
+  {week:2,date:"2026-03-19",day:"Thu",type:"Tempo Run",      distance:7,   pace:"5:50",description:"Warm up 1.5km · 4km comfortably hard · cool down 1.5km. Controlled but challenging.",              completed:false, notes:""},
+  {week:2,date:"2026-03-22",day:"Sun",type:"Long Run",       distance:26,  pace:"6:45",description:"THIS WEEKEND — 26km. Take a gel at 45 & 90 mins. Slow and conversational throughout.",             completed:false, notes:""},
+  {week:3,date:"2026-03-24",day:"Tue",type:"Easy Run",       distance:5,   pace:"6:40",description:"Recovery week — deliberately short and easy. Your body is adapting from last week.",               completed:false, notes:""},
+  {week:3,date:"2026-03-26",day:"Thu",type:"Easy Run",       distance:5,   pace:"6:40",description:"Short and relaxed. No pace targets — just move your legs.",                                         completed:false, notes:""},
+  {week:3,date:"2026-03-29",day:"Sun",type:"Long Run",       distance:22,  pace:"6:50",description:"Recovery long run — 22km. Easier than last week by design. Run by feel, not pace.",               completed:false, notes:""},
+  {week:4,date:"2026-03-31",day:"Tue",type:"Intervals",      distance:7,   pace:"5:10",description:"5×1km at 5k effort with 90s recovery jog. 1km warm up + 1km cool down included.",                 completed:false, notes:""},
+  {week:4,date:"2026-04-02",day:"Thu",type:"Easy Run",       distance:6,   pace:"6:30",description:"Easy shakeout after Tuesday intervals. Genuinely easy — don't be a hero.",                         completed:false, notes:""},
+  {week:4,date:"2026-04-05",day:"Sun",type:"Long Run",       distance:28,  pace:"6:45",description:"Big step up to 28km. Dress rehearsal for race nutrition — practise exactly what you'll use.",      completed:false, notes:""},
+  {week:5,date:"2026-04-07",day:"Tue",type:"Tempo Run",      distance:8,   pace:"5:50",description:"Warm up 2km · 5km at tempo (comfortably hard) · cool down 1km.",                                  completed:false, notes:""},
+  {week:5,date:"2026-04-09",day:"Thu",type:"Easy Run",       distance:6,   pace:"6:30",description:"Easy effort. Optional 4×20s strides at the end to keep legs feeling sharp.",                       completed:false, notes:""},
+  {week:5,date:"2026-04-12",day:"Sun",type:"Long Run",       distance:30,  pace:"6:45",description:"30km — your biggest run yet. Slow is fast here. Fuel every 40 mins without fail.",                 completed:false, notes:""},
+  {week:6,date:"2026-04-14",day:"Tue",type:"Marathon Pace",  distance:9,   pace:"6:30",description:"2km warm up · 5km at target race pace (6:30/km) · 2km cool down. Hard but controlled.",           completed:false, notes:""},
+  {week:6,date:"2026-04-16",day:"Thu",type:"Easy Run",       distance:6,   pace:"6:30",description:"Keep it easy — fresh legs matter more than extra fitness now.",                                     completed:false, notes:""},
+  {week:6,date:"2026-04-19",day:"Sun",type:"Long Run",       distance:32,  pace:"6:45",description:"PEAK LONG RUN — 32km (20 miles). Your crowning training achievement. After this, it's all taper.", completed:false, notes:""},
+  {week:7,date:"2026-04-21",day:"Tue",type:"Easy Run",       distance:6,   pace:"6:30",description:"Taper begins — volume drops sharply. Your fitness is banked. Trust it.",                           completed:false, notes:""},
+  {week:7,date:"2026-04-23",day:"Thu",type:"Marathon Pace",  distance:5,   pace:"6:30",description:"1km warm up · 3km at race pace · 1km cool down. Short, sharp, confident.",                        completed:false, notes:""},
+  {week:7,date:"2026-04-26",day:"Sun",type:"Long Run",       distance:22,  pace:"6:45",description:"Final long run — 22km. Keep it easy and enjoyable. Last big confidence boost before race day.",    completed:false, notes:""},
+  {week:8,date:"2026-04-28",day:"Tue",type:"Easy Run",       distance:6,   pace:"6:40",description:"Easy 6km. No pressure — just keep the legs ticking over.",                                         completed:false, notes:""},
+  {week:8,date:"2026-04-30",day:"Thu",type:"Easy Shake-out", distance:4,   pace:"6:45",description:"Short and easy. After today, stay off your feet as much as possible.",                             completed:false, notes:""},
+  {week:8,date:"2026-05-02",day:"Sat",type:"Easy Shake-out", distance:3,   pace:"6:50",description:"10–15 min gentle jog. Loosen the legs, nothing more. Eat well and rest.",                         completed:false, notes:""},
+  {week:8,date:"2026-05-04",day:"Mon",type:"RACE DAY 🏁",    distance:42.2,pace:"6:30",description:"Milton Keynes Marathon! Start slow, trust your training, run your own race. You've got this!",    completed:false, notes:""},
 ];
 
 const NUTRITION_TIPS = [
-  { phase:"Training Days", icon:"🍝", tip:"Eat 55–65% carbs on long run days. A bowl of pasta the night before your long run is your friend." },
-  { phase:"Hydration", icon:"💧", tip:"Drink 500ml of water 2 hours before any run over 10km. Don't wait until you're thirsty." },
-  { phase:"During Long Runs", icon:"🍬", tip:"Take a gel or chew every 30–45 minutes for runs over 75 mins. Practise your race-day nutrition strategy now." },
-  { phase:"Recovery", icon:"🥛", tip:"Within 30 mins of finishing, get 20–30g of protein + carbs. Chocolate milk is surprisingly ideal." },
-  { phase:"Race Week", icon:"🌾", tip:"Carb-load the 2–3 days before the race: 8–10g of carbs per kg bodyweight. Stick to familiar foods only." },
-  { phase:"Race Morning", icon:"🍌", tip:"Eat 2–3 hours before start: toast, banana, oats. Nothing new. Aim for ~400–600 calories." },
+  {phase:"Training Days",  icon:"🍝", tip:"Eat 55–65% carbs on long run days. A bowl of pasta the night before your long run is your friend."},
+  {phase:"Hydration",      icon:"💧", tip:"Drink 500ml of water 2 hours before any run over 10km. Don't wait until you're thirsty."},
+  {phase:"During Long Runs",icon:"🍬",tip:"Take a gel or chew every 30–45 minutes for runs over 75 mins. Practise your race-day nutrition strategy now."},
+  {phase:"Recovery",       icon:"🥛", tip:"Within 30 mins of finishing, get 20–30g of protein + carbs. Chocolate milk is surprisingly ideal."},
+  {phase:"Race Week",      icon:"🌾", tip:"Carb-load the 2–3 days before the race: 8–10g of carbs per kg bodyweight. Stick to familiar foods only."},
+  {phase:"Race Morning",   icon:"🍌", tip:"Eat 2–3 hours before start: toast, banana, oats. Nothing new. Aim for ~400–600 calories."},
 ];
 
 const TRAINING_TIPS = [
-  { category:"Pacing", icon:"⏱️", tip:"Run your long runs 60–90 seconds slower than goal marathon pace. Most runners train too fast." },
-  { category:"Recovery", icon:"😴", tip:"Sleep is your best training tool. Aim for 8+ hours. Your body builds fitness while you sleep, not during runs." },
-  { category:"Cross Training", icon:"🚴", tip:"Add 1 session of cycling or swimming per week to build aerobic fitness without the impact stress." },
-  { category:"Strength", icon:"💪", tip:"2×20 mins of glute and core work per week will prevent injuries and improve your running economy." },
-  { category:"Taper Madness", icon:"🧠", tip:"During taper (final 2 weeks) your legs may feel heavy and odd. This is completely normal — trust the process." },
-  { category:"Race Strategy", icon:"🗺️", tip:"Start the first 5km slower than goal pace. It's very easy to go out too fast on race day adrenaline." },
+  {category:"Pacing",        icon:"⏱️", tip:"Run your long runs 60–90 seconds slower than goal marathon pace. Most runners train too fast."},
+  {category:"Recovery",      icon:"😴", tip:"Sleep is your best training tool. Aim for 8+ hours. Your body builds fitness while you sleep, not during runs."},
+  {category:"Cross Training",icon:"🚴", tip:"Add 1 session of cycling or swimming per week to build aerobic fitness without the impact stress."},
+  {category:"Strength",      icon:"💪", tip:"2×20 mins of glute and core work per week will prevent injuries and improve your running economy."},
+  {category:"Taper Madness", icon:"🧠", tip:"During taper (final 2 weeks) your legs may feel heavy and odd. This is completely normal — trust the process."},
+  {category:"Race Strategy", icon:"🗺️", tip:"Start the first 5km slower than goal pace. It's very easy to go out too fast on race day adrenaline."},
 ];
 
 const TYPE_COLORS = {
-  "Easy Run":      { bg:"#e8f5e9", text:"#2e7d32", border:"#81c784" },
-  "Long Run":      { bg:"#e3f2fd", text:"#1565c0", border:"#64b5f6" },
-  "Tempo Run":     { bg:"#fff3e0", text:"#e65100", border:"#ffb74d" },
-  "Intervals":     { bg:"#f3e5f5", text:"#6a1b9a", border:"#ba68c8" },
-  "Marathon Pace": { bg:"#fce4ec", text:"#880e4f", border:"#f48fb1" },
-  "Easy Shake-out":{ bg:"#e0f7fa", text:"#006064", border:"#4dd0e1" },
-  "RACE DAY 🏁":  { bg:"#fffde7", text:"#f57f17", border:"#ffd54f" },
+  "Easy Run":      {bg:"#e8f5e9", text:"#2e7d32", border:"#81c784"},
+  "Long Run":      {bg:"#e3f2fd", text:"#1565c0", border:"#64b5f6"},
+  "Tempo Run":     {bg:"#fff3e0", text:"#e65100", border:"#ffb74d"},
+  "Intervals":     {bg:"#f3e5f5", text:"#6a1b9a", border:"#ba68c8"},
+  "Marathon Pace": {bg:"#fce4ec", text:"#880e4f", border:"#f48fb1"},
+  "Easy Shake-out":{bg:"#e0f7fa", text:"#006064", border:"#4dd0e1"},
+  "RACE DAY 🏁":  {bg:"#fffde7", text:"#f57f17", border:"#ffd54f"},
 };
 
-// ── localStorage helpers ──────────────────────────────────────────────
-const LS_RUNS    = "mk_marathon_runs_v1";
-const LS_STRAVA  = "mk_marathon_strava_v1";
-const LS_TAB     = "mk_marathon_tab_v1";
+/* ─── Firebase helpers ──────────────────────────────────────────────── */
+function fbRef(path)          { return window._fb.ref(window._fb.db, path); }
+function fbSet(path, val)     { return window._fb.set(fbRef(path), val); }
+function fbUpdate(path, val)  { return window._fb.update(fbRef(path), val); }
+function fbListen(path, cb)   { return window._fb.onValue(fbRef(path), snap => cb(snap.val())); }
 
-function loadRuns() {
-  try {
-    const saved = localStorage.getItem(LS_RUNS);
-    if (!saved) return BASE_PLAN.map((r,i) => ({...r, id:i}));
-    const overrides = JSON.parse(saved); // { id: {completed, notes} }
-    return BASE_PLAN.map((r,i) => ({
-      ...r, id:i,
-      completed: overrides[i]?.completed ?? r.completed,
-      notes:     overrides[i]?.notes     ?? r.notes,
-    }));
-  } catch { return BASE_PLAN.map((r,i) => ({...r, id:i})); }
+/* ─── Merge Firebase overrides into base plan ───────────────────────── */
+function mergeRuns(fbData) {
+  return BASE_PLAN.map((r, i) => ({
+    ...r, id: i,
+    completed: fbData?.[i]?.completed ?? r.completed,
+    notes:     fbData?.[i]?.notes     ?? r.notes,
+  }));
 }
 
-function saveRuns(runs) {
-  try {
-    const overrides = {};
-    runs.forEach(r => { overrides[r.id] = { completed: r.completed, notes: r.notes }; });
-    localStorage.setItem(LS_RUNS, JSON.stringify(overrides));
-  } catch {}
-}
-
-function loadStrava() {
-  try {
-    const saved = localStorage.getItem(LS_STRAVA);
-    return saved ? JSON.parse(saved) : [
-      { date:"2026-03-15", distance:"24", time:"2:42:00", type:"Long Run" },
-      { date:"2026-03-12", distance:"5",  time:"32:30",   type:"Easy Run" },
-    ];
-  } catch { return []; }
-}
-
-function saveStrava(runs) {
-  try { localStorage.setItem(LS_STRAVA, JSON.stringify(runs)); } catch {}
-}
-
-// ── Progress Ring ─────────────────────────────────────────────────────
+/* ─── Progress Ring ─────────────────────────────────────────────────── */
 function ProgressRing({ percent, size=80, stroke=8, color="#e8b04b" }) {
-  const r = (size - stroke) / 2;
-  const circ = 2 * Math.PI * r;
-  const offset = circ - (percent / 100) * circ;
+  const r = (size - stroke) / 2, circ = 2 * Math.PI * r;
   return (
     <svg width={size} height={size} style={{transform:"rotate(-90deg)"}}>
       <circle cx={size/2} cy={size/2} r={r} fill="none" stroke="#e5e5e5" strokeWidth={stroke}/>
       <circle cx={size/2} cy={size/2} r={r} fill="none" stroke={color} strokeWidth={stroke}
-        strokeDasharray={circ} strokeDashoffset={offset}
+        strokeDasharray={circ} strokeDashoffset={circ-(percent/100)*circ}
         style={{transition:"stroke-dashoffset 0.8s ease"}} strokeLinecap="round"/>
     </svg>
   );
 }
 
-// ── AI Insights ───────────────────────────────────────────────────────
+/* ─── AI Insights ────────────────────────────────────────────────────── */
 function AIInsights({ runs }) {
-  const [insight, setInsight]   = useState("");
-  const [loading, setLoading]   = useState(false);
-  const [aiTab,   setAiTab]     = useState("training");
-
-  const completedRuns = runs.filter(r => r.completed);
-  const totalKm       = completedRuns.reduce((s,r) => s + r.distance, 0);
-  const daysLeft      = getDaysUntilRace();
+  const [insight, setInsight] = useState("");
+  const [loading, setLoading] = useState(false);
+  const [aiTab,   setAiTab]   = useState("training");
+  const daysLeft  = getDaysUntilRace();
+  const done      = runs.filter(r => r.completed);
+  const totalKm   = done.reduce((s,r) => s + r.distance, 0);
 
   const getInsight = useCallback(async (topic) => {
-    setLoading(true);
-    setAiTab(topic);
+    setLoading(true); setAiTab(topic);
     const prompts = {
-      training: `You are an expert marathon running coach. The athlete is training for the Milton Keynes Marathon on 4th May 2026. There are ${daysLeft} days until race day. They have completed ${completedRuns.length} training sessions totalling ${totalKm.toFixed(1)}km. Their goal is sub 5 hours (target pace ~6:30/km). Give them a specific, motivating, practical training insight for today in 3–4 sentences. Be direct and personal.`,
-      nutrition: `You are a sports nutritionist specialising in endurance running. An athlete is ${daysLeft} days out from the Milton Keynes Marathon (4th May 2026). Goal: sub 5 hours. Give specific, practical nutrition advice for this phase of training — foods, quantities, timing — in 3–4 sentences.`,
-      recovery:  `You are an elite marathon coach. The athlete has ${daysLeft} days until their marathon. Give specific recovery advice for this stage — what to prioritise, what to avoid, and practical tips. 3–4 sentences, actionable.`,
+      training: `You are an expert marathon running coach. The athlete is training for the Milton Keynes Marathon on 4th May 2026. There are ${daysLeft} days until race day. They have completed ${done.length} training sessions totalling ${totalKm.toFixed(1)}km. Goal: sub 5 hours (pace ~6:30/km). Give a specific, motivating, practical training insight for today in 3–4 sentences. Be direct and personal.`,
+      nutrition: `You are a sports nutritionist specialising in endurance running. An athlete is ${daysLeft} days from the Milton Keynes Marathon (4th May 2026). Goal: sub 5 hours. Give specific, practical nutrition advice for this phase — foods, quantities, timing — in 3–4 sentences.`,
+      recovery:  `You are an elite marathon coach. The athlete has ${daysLeft} days until their marathon. Give specific recovery advice for this stage — what to prioritise, what to avoid, practical tips. 3–4 sentences, actionable.`,
     };
     try {
-      const res = await fetch("https://api.anthropic.com/v1/messages", {
-        method:"POST",
-        headers:{"Content-Type":"application/json"},
-        body: JSON.stringify({
-          model:"claude-sonnet-4-20250514",
-          max_tokens:1000,
-          messages:[{role:"user", content:prompts[topic]}],
-        }),
+      const res  = await fetch("https://api.anthropic.com/v1/messages", {
+        method:"POST", headers:{"Content-Type":"application/json"},
+        body: JSON.stringify({ model:"claude-sonnet-4-20250514", max_tokens:1000,
+          messages:[{role:"user", content:prompts[topic]}] }),
       });
       const data = await res.json();
       setInsight(data.content?.[0]?.text || "Could not load insight.");
-    } catch {
-      setInsight("Could not connect to AI coach. Please check your connection and try again.");
-    }
+    } catch { setInsight("Could not connect to AI coach. Check your connection and try again."); }
     setLoading(false);
-  }, [daysLeft, completedRuns.length, totalKm]);
+  }, [daysLeft, done.length, totalKm]);
 
   useEffect(() => { getInsight("training"); }, []);
 
@@ -203,7 +199,7 @@ function AIInsights({ runs }) {
         <span style={{fontSize:28}}>🤖</span>
         <div>
           <h3 style={{margin:0,fontSize:20,fontFamily:"'Playfair Display',serif",fontWeight:700}}>AI Coach Insights</h3>
-          <p style={{margin:0,fontSize:12,opacity:0.5,fontFamily:"monospace"}}>Powered by Claude · Updates on demand</p>
+          <p style={{margin:0,fontSize:12,opacity:0.45,fontFamily:"monospace"}}>Powered by Claude · Updates on demand</p>
         </div>
       </div>
       <div style={{display:"flex",gap:8,marginBottom:20,flexWrap:"wrap"}}>
@@ -216,105 +212,157 @@ function AIInsights({ runs }) {
         ))}
       </div>
       <div style={{background:"rgba(255,255,255,0.07)",borderRadius:12,padding:20,minHeight:90}}>
-        {loading ? (
-          <div style={{display:"flex",alignItems:"center",gap:10,opacity:0.7}}>
-            <div style={{width:8,height:8,borderRadius:"50%",background:"#e8b04b",animation:"pulse 1s infinite"}}/>
-            <span style={{fontFamily:"monospace",fontSize:14}}>AI Coach is thinking…</span>
-          </div>
-        ) : (
-          <p style={{margin:0,lineHeight:1.75,fontSize:15,fontFamily:"Georgia,serif",color:"#f0e6d3"}}>{insight}</p>
-        )}
+        {loading
+          ? <div style={{display:"flex",alignItems:"center",gap:10,opacity:0.7}}>
+              <div style={{width:8,height:8,borderRadius:"50%",background:"#e8b04b",animation:"pulse 1s infinite"}}/>
+              <span style={{fontFamily:"monospace",fontSize:14}}>AI Coach is thinking…</span>
+            </div>
+          : <p style={{margin:0,lineHeight:1.75,fontSize:15,fontFamily:"Georgia,serif",color:"#f0e6d3"}}>{insight}</p>
+        }
       </div>
     </div>
   );
 }
 
-// ── Main App ──────────────────────────────────────────────────────────
+/* ─── Main App ───────────────────────────────────────────────────────── */
 function App() {
-  const [runs,        setRuns]        = useState(() => loadRuns());
-  const [activeTab,   setActiveTab]   = useState(() => localStorage.getItem(LS_TAB) || "schedule");
+  const [fbReady,     setFbReady]     = useState(!!window._fb);
+  const [syncStatus,  setSyncStatus]  = useState("loading"); // loading | online | offline
+  const [runs,        setRuns]        = useState(() => mergeRuns(null));
+  const [activeTab,   setActiveTab]   = useState("schedule");
   const [selectedRun, setSelectedRun] = useState(null);
   const [noteInput,   setNoteInput]   = useState("");
-  const [stravaRuns,  setStravaRuns]  = useState(() => loadStrava());
-  const [stravaForm,  setStravaForm]  = useState({date:"",distance:"",time:"",type:"Easy Run"});
-  const [saveFlash,   setSaveFlash]   = useState(false);
+  const [activities,  setActivities]  = useState([]);
+  const [actForm,     setActForm]     = useState({date:"",distance:"",time:"",type:"Easy Run"});
+  const [toast,       setToast]       = useState("");
+  const ignoreNextRef = useRef(false);
 
-  // Persist runs whenever they change
-  useEffect(() => { saveRuns(runs); }, [runs]);
-  useEffect(() => { saveStrava(stravaRuns); }, [stravaRuns]);
-  useEffect(() => { localStorage.setItem(LS_TAB, activeTab); }, [activeTab]);
+  // Wait for Firebase module to load
+  useEffect(() => {
+    if (window._fb) { setFbReady(true); return; }
+    const h = () => setFbReady(true);
+    window.addEventListener("firebase-ready", h);
+    return () => window.removeEventListener("firebase-ready", h);
+  }, []);
 
-  const daysLeft      = getDaysUntilRace();
-  const completedRuns = runs.filter(r => r.completed);
-  const totalKm       = completedRuns.reduce((s,r) => s + r.distance, 0);
-  const plannedKm     = runs.reduce((s,r) => s + r.distance, 0);
-  const progress      = Math.round((completedRuns.length / runs.length) * 100);
-  const totalStrava   = stravaRuns.reduce((s,r) => s + parseFloat(r.distance||0), 0);
+  // Subscribe to Firebase — runs
+  useEffect(() => {
+    if (!fbReady) return;
+    setSyncStatus("loading");
+    const unsub = fbListen("runs", (data) => {
+      setSyncStatus("online");
+      if (ignoreNextRef.current) { ignoreNextRef.current = false; return; }
+      setRuns(mergeRuns(data));
+    });
+    return unsub;
+  }, [fbReady]);
 
-  // Determine current week
-  const today = new Date(); today.setHours(0,0,0,0);
-  const currentWeek = (() => {
-    for (const run of runs) {
-      const d = new Date(run.date);
-      const diff = (d - today) / (1000*60*60*24);
-      if (diff >= -6 && diff <= 6) return run.week;
+  // Subscribe to Firebase — activities
+  useEffect(() => {
+    if (!fbReady) return;
+    const unsub = fbListen("activities", (data) => {
+      setActivities(data ? Object.values(data) : []);
+    });
+    return unsub;
+  }, [fbReady]);
+
+  // Handle offline
+  useEffect(() => {
+    const go  = () => setSyncStatus("online");
+    const off = () => setSyncStatus("offline");
+    window.addEventListener("online",  go);
+    window.addEventListener("offline", off);
+    return () => { window.removeEventListener("online", go); window.removeEventListener("offline", off); };
+  }, []);
+
+  function showToast(msg) { setToast(msg); setTimeout(() => setToast(""), 2000); }
+
+  async function toggleComplete(id) {
+    const run     = runs.find(r => r.id === id);
+    const newVal  = !run.completed;
+    // Optimistic update
+    setRuns(prev => prev.map(r => r.id===id ? {...r, completed:newVal} : r));
+    ignoreNextRef.current = true;
+    try {
+      await fbUpdate(`runs/${id}`, { completed: newVal, notes: run.notes });
+      showToast(newVal ? "✓ Run marked complete — synced!" : "Run unmarked — synced");
+    } catch {
+      setRuns(prev => prev.map(r => r.id===id ? {...r, completed:!newVal} : r)); // rollback
+      showToast("⚠️ Sync failed — check connection");
     }
-    return null;
-  })();
-
-  function toggleComplete(id) {
-    setRuns(prev => prev.map(r => r.id===id ? {...r, completed:!r.completed} : r));
-    setSaveFlash(true);
-    setTimeout(() => setSaveFlash(false), 1500);
   }
 
   function openNote(run) { setSelectedRun(run); setNoteInput(run.notes||""); }
 
-  function saveNote() {
+  async function saveNote() {
     if (!selectedRun) return;
-    setRuns(prev => prev.map(r => r.id===selectedRun.id ? {...r, notes:noteInput} : r));
-    setSelectedRun(null); setNoteInput("");
-    setSaveFlash(true);
-    setTimeout(() => setSaveFlash(false), 1500);
+    const id = selectedRun.id;
+    setRuns(prev => prev.map(r => r.id===id ? {...r, notes:noteInput} : r));
+    setSelectedRun(null);
+    ignoreNextRef.current = true;
+    try {
+      await fbUpdate(`runs/${id}`, { completed: selectedRun.completed, notes: noteInput });
+      showToast("📝 Note saved — synced!");
+    } catch { showToast("⚠️ Note saved locally but sync failed"); }
   }
 
-  function addStravaRun() {
-    if (!stravaForm.date || !stravaForm.distance) return;
-    setStravaRuns(prev => [...prev, {...stravaForm}]);
-    setStravaForm({date:"",distance:"",time:"",type:"Easy Run"});
+  async function addActivity() {
+    if (!actForm.date || !actForm.distance) return;
+    const key  = `act_${Date.now()}`;
+    const item = { ...actForm, key };
+    setActivities(prev => [...prev, item]);
+    setActForm({date:"",distance:"",time:"",type:"Easy Run"});
+    try {
+      await fbSet(`activities/${key}`, item);
+      showToast("🏃 Activity logged — synced!");
+    } catch { showToast("⚠️ Activity saved locally but sync failed"); }
   }
 
-  function deleteStravaRun(i) {
-    setStravaRuns(prev => prev.filter((_,idx) => idx!==i));
+  async function deleteActivity(key) {
+    setActivities(prev => prev.filter(a => a.key !== key));
+    try { await fbSet(`activities/${key}`, null); } catch {}
   }
 
-  // Group by week
-  const weekGroups = runs.reduce((acc, run) => {
-    if (!acc[run.week]) acc[run.week] = [];
-    acc[run.week].push(run);
-    return acc;
+  // Derived stats
+  const daysLeft    = getDaysUntilRace();
+  const done        = runs.filter(r => r.completed);
+  const totalKm     = done.reduce((s,r) => s+r.distance, 0);
+  const plannedKm   = runs.reduce((s,r) => s+r.distance, 0);
+  const progress    = Math.round((done.length / runs.length) * 100);
+  const totalActKm  = activities.reduce((s,a) => s+parseFloat(a.distance||0), 0);
+
+  const todayD = new Date(); todayD.setHours(0,0,0,0);
+  const currentWeek = (() => {
+    for (const r of runs) {
+      const d = new Date(r.date), diff = (d - todayD)/86400000;
+      if (diff >= -6 && diff <= 6) return r.week;
+    }
+    return null;
+  })();
+
+  const weekGroups = runs.reduce((acc,r) => {
+    if (!acc[r.week]) acc[r.week] = [];
+    acc[r.week].push(r); return acc;
   }, {});
 
-  const tabs = [
-    {key:"schedule", emoji:"📋", label:"Schedule"},
-    {key:"insights", emoji:"🤖", label:"AI Coach"},
-    {key:"strava",   emoji:"🟠", label:"Activity Log"},
-    {key:"tips",     emoji:"💡", label:"Tips & Nutrition"},
-  ];
+  const syncLabel = { loading:"Connecting…", online:"Synced across all devices", offline:"Offline — changes saved locally" };
+  const syncColor = { loading:"#60a5fa", online:"#22c55e", offline:"#f59e0b" };
+
+  if (!fbReady) return null; // show the HTML loading screen
 
   return (
     <div style={{minHeight:"100vh",background:"#f7f4ef"}}>
 
-      {/* ── Save flash ── */}
+      {/* Toast */}
       <div style={{
-        position:"fixed",bottom:20,right:20,zIndex:9999,
-        background:"#22c55e",color:"white",padding:"10px 18px",borderRadius:10,
-        fontSize:13,fontWeight:600,boxShadow:"0 4px 12px rgba(0,0,0,0.15)",
-        transform:saveFlash?"translateY(0)":"translateY(80px)",
-        opacity:saveFlash?1:0,transition:"all 0.3s",
-      }}>✓ Saved</div>
+        position:"fixed",bottom:24,right:24,zIndex:9999,
+        background:"#1a1a2e",color:"white",padding:"12px 20px",borderRadius:12,
+        fontSize:13,fontWeight:600,boxShadow:"0 8px 24px rgba(0,0,0,0.2)",
+        transform:toast?"translateY(0)":"translateY(80px)",
+        opacity:toast?1:0,transition:"all 0.3s ease",pointerEvents:"none",
+      }}>{toast}</div>
 
-      {/* ── Header ── */}
+      {/* Header */}
       <div className="header-pad" style={{
         background:"linear-gradient(135deg,#1a1a2e 0%,#0f3460 100%)",
         color:"white",padding:"40px 32px 32px",position:"relative",overflow:"hidden",
@@ -322,6 +370,11 @@ function App() {
         <div style={{position:"absolute",top:-40,right:-40,width:200,height:200,borderRadius:"50%",background:"rgba(232,176,75,0.1)"}}/>
         <div style={{position:"absolute",bottom:-60,right:80,width:140,height:140,borderRadius:"50%",background:"rgba(232,176,75,0.06)"}}/>
         <div style={{maxWidth:860,margin:"0 auto",position:"relative"}}>
+          {/* Sync status badge */}
+          <div style={{display:"inline-flex",alignItems:"center",background:"rgba(255,255,255,0.08)",borderRadius:20,padding:"4px 12px",marginBottom:12,fontSize:12}}>
+            <span className={`sync-dot ${syncStatus}`}/>
+            <span style={{opacity:0.7}}>{syncLabel[syncStatus]}</span>
+          </div>
           <p style={{margin:"0 0 4px",fontSize:11,letterSpacing:3,textTransform:"uppercase",opacity:0.45,fontWeight:500}}>Marathon Training Dashboard</p>
           <h1 style={{margin:"0 0 4px",fontFamily:"'Playfair Display',serif",fontSize:"clamp(24px,5vw,38px)",fontWeight:900,lineHeight:1.1}}>
             Milton Keynes Marathon
@@ -329,10 +382,10 @@ function App() {
           <p style={{margin:"0 0 28px",opacity:0.55,fontSize:14}}>4th May 2026 · Target: Sub 5:00:00 · Pace: 6:30/km</p>
           <div className="stats-grid" style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:12}}>
             {[
-              {label:"Days to Race", value:daysLeft,               icon:"📅", color:"#e8b04b"},
-              {label:"Sessions Done",value:`${completedRuns.length}/${runs.length}`, icon:"✅", color:"#4dd0e1"},
-              {label:"KM Logged",    value:`${totalKm.toFixed(1)}`, icon:"🏃", color:"#81c784"},
-              {label:"Plan Progress",value:`${progress}%`,          icon:"📈", color:"#f48fb1"},
+              {label:"Days to Race", value:daysLeft,                        icon:"📅",color:"#e8b04b"},
+              {label:"Sessions Done",value:`${done.length}/${runs.length}`, icon:"✅",color:"#4dd0e1"},
+              {label:"KM Logged",    value:`${totalKm.toFixed(1)}km`,       icon:"🏃",color:"#81c784"},
+              {label:"Plan Progress",value:`${progress}%`,                  icon:"📈",color:"#f48fb1"},
             ].map(s => (
               <div key={s.label} style={{background:"rgba(255,255,255,0.08)",borderRadius:12,padding:"14px 16px",backdropFilter:"blur(10px)"}}>
                 <div style={{fontSize:22,marginBottom:4}}>{s.icon}</div>
@@ -344,7 +397,7 @@ function App() {
         </div>
       </div>
 
-      {/* ── Progress bar ── */}
+      {/* Progress bar */}
       <div style={{background:"#1a1a2e",padding:"10px 32px"}}>
         <div style={{maxWidth:860,margin:"0 auto",display:"flex",alignItems:"center",gap:12}}>
           <span style={{color:"rgba(255,255,255,0.4)",fontSize:11,minWidth:100,whiteSpace:"nowrap"}}>Overall Progress</span>
@@ -355,10 +408,15 @@ function App() {
         </div>
       </div>
 
-      {/* ── Tabs ── */}
+      {/* Tabs */}
       <div className="content-pad" style={{maxWidth:860,margin:"0 auto",padding:"0 32px"}}>
         <div style={{display:"flex",gap:2,borderBottom:"2px solid #e5e0d8",marginTop:28,marginBottom:28,overflowX:"auto"}}>
-          {tabs.map(t => (
+          {[
+            {key:"schedule",emoji:"📋",label:"Schedule"},
+            {key:"insights",emoji:"🤖",label:"AI Coach"},
+            {key:"activities",emoji:"🟠",label:"Activity Log"},
+            {key:"tips",    emoji:"💡",label:"Tips & Nutrition"},
+          ].map(t => (
             <button key={t.key} className="tab-btn" onClick={() => setActiveTab(t.key)} style={{
               padding:"10px 16px",border:"none",background:"transparent",cursor:"pointer",
               fontSize:13,fontWeight:600,fontFamily:"inherit",whiteSpace:"nowrap",
@@ -371,35 +429,34 @@ function App() {
           ))}
         </div>
 
-        {/* ════ SCHEDULE ════ */}
+        {/* ═══ SCHEDULE ═══ */}
         {activeTab==="schedule" && (
           <div className="fade-in">
-            {Object.entries(weekGroups).map(([week, weekRuns]) => {
+            {Object.entries(weekGroups).map(([week, wRuns]) => {
               const wNum = parseInt(week);
-              const isCurrentWeek = wNum === currentWeek;
-              const weekDone = weekRuns.filter(r => r.completed).length;
+              const isCurrent = wNum === currentWeek;
+              const wDone = wRuns.filter(r => r.completed).length;
               return (
                 <div key={week} style={{marginBottom:28}}>
                   <div style={{display:"flex",alignItems:"center",gap:12,marginBottom:12}}>
-                    <h3 style={{margin:0,fontSize:12,fontWeight:700,textTransform:"uppercase",letterSpacing:2,
-                      color:isCurrentWeek?"#e8b04b":"#aaa",whiteSpace:"nowrap"}}>
+                    <h3 style={{margin:0,fontSize:12,fontWeight:700,textTransform:"uppercase",letterSpacing:2,color:isCurrent?"#e8b04b":"#aaa",whiteSpace:"nowrap"}}>
                       {wNum===8?"🏁 Race Week":`Week ${week}`}
-                      {isCurrentWeek && <span style={{marginLeft:8,background:"#e8b04b",color:"#1a1a2e",fontSize:10,padding:"2px 8px",borderRadius:10,fontWeight:700,letterSpacing:0}}>THIS WEEK</span>}
+                      {isCurrent && <span style={{marginLeft:8,background:"#e8b04b",color:"#1a1a2e",fontSize:10,padding:"2px 8px",borderRadius:10,fontWeight:700,letterSpacing:0}}>THIS WEEK</span>}
                     </h3>
                     <div style={{flex:1,height:1,background:"#e5e0d8"}}/>
-                    <span style={{fontSize:11,color:"#aaa",whiteSpace:"nowrap"}}>{weekDone}/{weekRuns.length} done</span>
+                    <span style={{fontSize:11,color:"#aaa",whiteSpace:"nowrap"}}>{wDone}/{wRuns.length} done</span>
                   </div>
-                  {weekRuns.map(run => {
-                    const colors = TYPE_COLORS[run.type] || {bg:"#f5f5f5",text:"#333",border:"#ccc"};
-                    const isPast = new Date(run.date) < today && run.type !== "RACE DAY 🏁";
+                  {wRuns.map(run => {
+                    const c = TYPE_COLORS[run.type] || {bg:"#f5f5f5",text:"#333",border:"#ccc"};
+                    const isPast = new Date(run.date) < todayD && run.type!=="RACE DAY 🏁";
                     return (
                       <div key={run.id} className="run-card" style={{
-                        display:"grid", gridTemplateColumns:"56px 1fr",
-                        gap:14, background:run.completed?"#f0fdf4":"white",
+                        display:"grid",gridTemplateColumns:"56px 1fr",gap:14,
+                        background:run.completed?"#f0fdf4":"white",
                         border:`1px solid ${run.completed?"#bbf7d0":"#e5e0d8"}`,
-                        borderLeft:`4px solid ${colors.border}`,
-                        borderRadius:12, padding:"14px 16px", marginBottom:10,
-                        opacity:isPast && !run.completed ? 0.65 : 1,
+                        borderLeft:`4px solid ${c.border}`,
+                        borderRadius:12,padding:"14px 16px",marginBottom:10,
+                        opacity:isPast&&!run.completed?0.65:1,
                       }}>
                         <div style={{textAlign:"center",paddingTop:2}}>
                           <div style={{fontSize:11,fontWeight:700,color:"#aaa"}}>{run.day}</div>
@@ -408,13 +465,13 @@ function App() {
                         </div>
                         <div>
                           <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:6,flexWrap:"wrap"}}>
-                            <span style={{background:colors.bg,color:colors.text,fontSize:11,fontWeight:700,padding:"2px 8px",borderRadius:20,whiteSpace:"nowrap"}}>{run.type}</span>
+                            <span style={{background:c.bg,color:c.text,fontSize:11,fontWeight:700,padding:"2px 8px",borderRadius:20,whiteSpace:"nowrap"}}>{run.type}</span>
                             <span style={{fontWeight:700,fontSize:15,color:"#1a1a2e"}}>{run.distance}km</span>
                             <span style={{fontSize:12,color:"#888"}}>· {run.pace}/km</span>
                           </div>
                           <p style={{margin:"0 0 8px",fontSize:13,color:"#555",lineHeight:1.5}}>{run.description}</p>
-                          {run.notes && <p style={{margin:"0 0 8px",fontSize:12,color:"#888",fontStyle:"italic",background:"#f9f6f2",padding:"6px 10px",borderRadius:6}}>📝 {run.notes}</p>}
-                          <div className="run-actions" style={{display:"flex",gap:8,flexWrap:"wrap"}}>
+                          {run.notes && <p style={{margin:"0 0 8px",fontSize:12,color:"#777",fontStyle:"italic",background:"#f9f6f2",padding:"6px 10px",borderRadius:6}}>📝 {run.notes}</p>}
+                          <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
                             <button onClick={() => toggleComplete(run.id)} style={{
                               padding:"6px 14px",borderRadius:20,border:"none",cursor:"pointer",
                               fontSize:12,fontWeight:600,fontFamily:"inherit",
@@ -435,7 +492,7 @@ function App() {
           </div>
         )}
 
-        {/* ════ AI COACH ════ */}
+        {/* ═══ AI COACH ═══ */}
         {activeTab==="insights" && (
           <div className="fade-in">
             <AIInsights runs={runs}/>
@@ -447,8 +504,8 @@ function App() {
                     <ProgressRing percent={progress}/>
                     <div style={{position:"absolute",inset:0,display:"flex",alignItems:"center",justifyContent:"center",fontSize:14,fontWeight:700}}>{progress}%</div>
                   </div>
-                  <div style={{fontSize:13,lineHeight:2,color:"#555"}}>
-                    <div>Sessions: <strong>{completedRuns.length}/{runs.length}</strong></div>
+                  <div style={{fontSize:13,lineHeight:2.1,color:"#555"}}>
+                    <div>Sessions: <strong>{done.length}/{runs.length}</strong></div>
                     <div>KM done: <strong>{totalKm.toFixed(1)}km</strong></div>
                     <div>KM planned: <strong>{plannedKm.toFixed(1)}km</strong></div>
                     <div>Days left: <strong>{daysLeft}</strong></div>
@@ -459,31 +516,30 @@ function App() {
                 <h4 style={{margin:"0 0 16px",fontFamily:"'Playfair Display',serif",fontSize:18}}>🎯 Race Target</h4>
                 <div style={{fontSize:"clamp(28px,5vw,36px)",fontWeight:900,fontFamily:"'Playfair Display',serif",color:"#1a1a2e",lineHeight:1}}>4:34:37</div>
                 <div style={{fontSize:13,color:"#888",margin:"6px 0 10px"}}>At 6:30/km pace</div>
-                <div style={{fontSize:13,color:"#22c55e",fontWeight:600,marginBottom:6}}>✓ Under your 5:00 target by 25 mins</div>
-                <div style={{fontSize:12,color:"#aaa"}}>Race date: 4th May 2026</div>
+                <div style={{fontSize:13,color:"#22c55e",fontWeight:600,marginBottom:6}}>✓ Under 5:00 target by 25 mins</div>
+                <div style={{fontSize:12,color:"#aaa"}}>Race date: Mon 4th May 2026</div>
               </div>
             </div>
           </div>
         )}
 
-        {/* ════ ACTIVITY LOG ════ */}
-        {activeTab==="strava" && (
+        {/* ═══ ACTIVITY LOG ═══ */}
+        {activeTab==="activities" && (
           <div className="fade-in">
             <div style={{background:"linear-gradient(135deg,#FC4C02,#e03800)",borderRadius:16,padding:24,color:"white",marginBottom:20}}>
               <h3 style={{margin:"0 0 8px",fontFamily:"'Playfair Display',serif",fontSize:20}}>🟠 Activity Log</h3>
               <p style={{margin:0,opacity:0.85,fontSize:13,lineHeight:1.6}}>
-                Log your runs here — data is saved locally to your device and counts toward your progress stats. 
-                Full Strava auto-sync requires a backend; log runs manually here in the meantime.
+                Log your runs here — they sync instantly across all your devices via Firebase. Total km feeds into your progress stats.
               </p>
             </div>
             <div style={{background:"white",borderRadius:16,padding:24,border:"1px solid #e5e0d8",marginBottom:16}}>
               <h4 style={{margin:"0 0 16px",fontFamily:"'Playfair Display',serif"}}>Log a Run</h4>
-              <div className="strava-form" style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr 1fr auto",gap:10,alignItems:"end"}}>
+              <div className="strava-grid" style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr 1fr auto",gap:10,alignItems:"end"}}>
                 {[
-                  {label:"Date", el:<input type="date" value={stravaForm.date} onChange={e=>setStravaForm(p=>({...p,date:e.target.value}))} style={{width:"100%",padding:"8px 10px",border:"1px solid #e5e0d8",borderRadius:8,fontFamily:"inherit",fontSize:13}}/>},
-                  {label:"Distance (km)", el:<input type="number" step="0.1" placeholder="e.g. 10.5" value={stravaForm.distance} onChange={e=>setStravaForm(p=>({...p,distance:e.target.value}))} style={{width:"100%",padding:"8px 10px",border:"1px solid #e5e0d8",borderRadius:8,fontFamily:"inherit",fontSize:13}}/>},
-                  {label:"Time (hh:mm:ss)", el:<input type="text" placeholder="e.g. 1:05:30" value={stravaForm.time} onChange={e=>setStravaForm(p=>({...p,time:e.target.value}))} style={{width:"100%",padding:"8px 10px",border:"1px solid #e5e0d8",borderRadius:8,fontFamily:"inherit",fontSize:13}}/>},
-                  {label:"Type", el:<select value={stravaForm.type} onChange={e=>setStravaForm(p=>({...p,type:e.target.value}))} style={{width:"100%",padding:"8px 10px",border:"1px solid #e5e0d8",borderRadius:8,fontFamily:"inherit",fontSize:13}}>
+                  {label:"Date",           el:<input type="date" value={actForm.date} onChange={e=>setActForm(p=>({...p,date:e.target.value}))} style={{width:"100%",padding:"8px 10px",border:"1px solid #e5e0d8",borderRadius:8,fontFamily:"inherit",fontSize:13}}/>},
+                  {label:"Distance (km)",  el:<input type="number" step="0.1" placeholder="e.g. 10.5" value={actForm.distance} onChange={e=>setActForm(p=>({...p,distance:e.target.value}))} style={{width:"100%",padding:"8px 10px",border:"1px solid #e5e0d8",borderRadius:8,fontFamily:"inherit",fontSize:13}}/>},
+                  {label:"Time (hh:mm:ss)",el:<input type="text" placeholder="e.g. 1:05:30" value={actForm.time} onChange={e=>setActForm(p=>({...p,time:e.target.value}))} style={{width:"100%",padding:"8px 10px",border:"1px solid #e5e0d8",borderRadius:8,fontFamily:"inherit",fontSize:13}}/>},
+                  {label:"Type",           el:<select value={actForm.type} onChange={e=>setActForm(p=>({...p,type:e.target.value}))} style={{width:"100%",padding:"8px 10px",border:"1px solid #e5e0d8",borderRadius:8,fontFamily:"inherit",fontSize:13}}>
                     <option>Easy Run</option><option>Long Run</option><option>Tempo Run</option><option>Intervals</option><option>Marathon Pace</option><option>Race</option><option>Recovery</option>
                   </select>},
                 ].map(f => (
@@ -492,45 +548,38 @@ function App() {
                     {f.el}
                   </div>
                 ))}
-                <button onClick={addStravaRun} style={{padding:"9px 16px",background:"#FC4C02",color:"white",border:"none",borderRadius:8,cursor:"pointer",fontWeight:700,fontSize:13,fontFamily:"inherit",whiteSpace:"nowrap"}}>+ Add</button>
+                <button onClick={addActivity} style={{padding:"9px 16px",background:"#FC4C02",color:"white",border:"none",borderRadius:8,cursor:"pointer",fontWeight:700,fontSize:13,fontFamily:"inherit",whiteSpace:"nowrap"}}>+ Add</button>
               </div>
             </div>
             <div style={{background:"white",borderRadius:16,padding:24,border:"1px solid #e5e0d8"}}>
               <div style={{display:"flex",justifyContent:"space-between",marginBottom:16,alignItems:"center"}}>
                 <h4 style={{margin:0,fontFamily:"'Playfair Display',serif"}}>Activity History</h4>
-                <span style={{fontSize:13,color:"#888"}}>Total: <strong>{totalStrava.toFixed(1)}km</strong></span>
+                <span style={{fontSize:13,color:"#888"}}>Total: <strong>{totalActKm.toFixed(1)}km</strong></span>
               </div>
-              {stravaRuns.length===0 && <p style={{color:"#aaa",fontSize:13,textAlign:"center",padding:"20px 0"}}>No runs logged yet. Add your first above!</p>}
-              {[...stravaRuns].sort((a,b)=>new Date(b.date)-new Date(a.date)).map((r,i) => {
-                const colors = TYPE_COLORS[r.type] || {border:"#FC4C02"};
-                return (
-                  <div key={i} style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"12px 0",borderBottom:i<stravaRuns.length-1?"1px solid #f0ede8":"none"}}>
-                    <div style={{display:"flex",gap:12,alignItems:"center"}}>
-                      <div style={{width:36,height:36,background:"#fff3e0",borderRadius:8,display:"flex",alignItems:"center",justifyContent:"center",fontSize:16,flexShrink:0}}>🏃</div>
-                      <div>
-                        <div style={{fontWeight:600,fontSize:14}}>{r.type}</div>
-                        <div style={{fontSize:12,color:"#aaa"}}>{r.date}</div>
-                      </div>
-                    </div>
-                    <div style={{display:"flex",alignItems:"center",gap:12}}>
-                      <div style={{textAlign:"right"}}>
-                        <div style={{fontWeight:700,color:"#FC4C02",fontSize:15}}>{r.distance}km</div>
-                        {r.time && <div style={{fontSize:12,color:"#aaa"}}>{r.time}</div>}
-                      </div>
-                      <button onClick={() => deleteStravaRun(stravaRuns.findIndex((_,idx)=>{
-                        // find by matching all fields
-                        const sorted = [...stravaRuns].sort((a,b)=>new Date(b.date)-new Date(a.date));
-                        return sorted[i] === stravaRuns[idx];
-                      }))} style={{background:"none",border:"none",cursor:"pointer",color:"#ddd",fontSize:16,padding:"4px",lineHeight:1}} title="Delete">✕</button>
+              {activities.length===0 && <p style={{color:"#aaa",fontSize:13,textAlign:"center",padding:"20px 0"}}>No activities logged yet. Add your first above!</p>}
+              {[...activities].sort((a,b)=>new Date(b.date)-new Date(a.date)).map((a) => (
+                <div key={a.key} style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"12px 0",borderBottom:"1px solid #f0ede8"}}>
+                  <div style={{display:"flex",gap:12,alignItems:"center"}}>
+                    <div style={{width:36,height:36,background:"#fff3e0",borderRadius:8,display:"flex",alignItems:"center",justifyContent:"center",fontSize:16,flexShrink:0}}>🏃</div>
+                    <div>
+                      <div style={{fontWeight:600,fontSize:14}}>{a.type}</div>
+                      <div style={{fontSize:12,color:"#aaa"}}>{a.date}</div>
                     </div>
                   </div>
-                );
-              })}
+                  <div style={{display:"flex",alignItems:"center",gap:12}}>
+                    <div style={{textAlign:"right"}}>
+                      <div style={{fontWeight:700,color:"#FC4C02",fontSize:15}}>{a.distance}km</div>
+                      {a.time && <div style={{fontSize:12,color:"#aaa"}}>{a.time}</div>}
+                    </div>
+                    <button onClick={() => deleteActivity(a.key)} style={{background:"none",border:"none",cursor:"pointer",color:"#ddd",fontSize:18,padding:"4px 6px",lineHeight:1}} title="Delete">×</button>
+                  </div>
+                </div>
+              ))}
             </div>
           </div>
         )}
 
-        {/* ════ TIPS ════ */}
+        {/* ═══ TIPS ═══ */}
         {activeTab==="tips" && (
           <div className="fade-in">
             <h3 style={{fontFamily:"'Playfair Display',serif",fontSize:22,marginBottom:20}}>🥗 Nutrition Plan</h3>
@@ -574,14 +623,14 @@ function App() {
           </div>
         )}
 
-        <div style={{height:48}}/>
+        <div style={{height:60}}/>
       </div>
 
-      {/* ── Note Modal ── */}
+      {/* Note Modal */}
       {selectedRun && (
-        <div onClick={(e) => e.target===e.currentTarget && setSelectedRun(null)}
+        <div onClick={e => e.target===e.currentTarget && setSelectedRun(null)}
           style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.55)",display:"flex",alignItems:"center",justifyContent:"center",zIndex:1000,padding:16}}>
-          <div style={{background:"white",borderRadius:20,padding:28,width:440,maxWidth:"100%",boxShadow:"0 20px 60px rgba(0,0,0,0.25)"}}>
+          <div style={{background:"white",borderRadius:20,padding:28,width:440,maxWidth:"100%",boxShadow:"0 20px 60px rgba(0,0,0,0.25)",animation:"slideIn 0.25s ease"}}>
             <h3 style={{margin:"0 0 4px",fontFamily:"'Playfair Display',serif",fontSize:20}}>Run Note</h3>
             <p style={{margin:"0 0 16px",fontSize:13,color:"#888"}}>{selectedRun.type} · {selectedRun.date} · {selectedRun.distance}km</p>
             <textarea value={noteInput} onChange={e=>setNoteInput(e.target.value)}
@@ -589,7 +638,7 @@ function App() {
               style={{width:"100%",height:110,padding:12,border:"1px solid #e5e0d8",borderRadius:10,fontFamily:"inherit",fontSize:14,resize:"vertical"}}
               autoFocus/>
             <div style={{display:"flex",gap:10,marginTop:14}}>
-              <button onClick={saveNote} style={{flex:1,padding:12,background:"#1a1a2e",color:"white",border:"none",borderRadius:10,cursor:"pointer",fontWeight:700,fontFamily:"inherit",fontSize:14}}>Save Note</button>
+              <button onClick={saveNote} style={{flex:1,padding:12,background:"#1a1a2e",color:"white",border:"none",borderRadius:10,cursor:"pointer",fontWeight:700,fontFamily:"inherit",fontSize:14}}>Save &amp; Sync</button>
               <button onClick={()=>setSelectedRun(null)} style={{padding:12,background:"#f5f5f5",border:"none",borderRadius:10,cursor:"pointer",fontFamily:"inherit",fontSize:14}}>Cancel</button>
             </div>
           </div>
@@ -599,7 +648,20 @@ function App() {
   );
 }
 
-ReactDOM.createRoot(document.getElementById("root")).render(<App/>);
+// Wait for Firebase to be ready before mounting
+function Root() {
+  const [ready, setReady] = useState(!!window._fb);
+  useEffect(() => {
+    if (window._fb) return;
+    const h = () => setReady(true);
+    window.addEventListener("firebase-ready", h);
+    return () => window.removeEventListener("firebase-ready", h);
+  }, []);
+  if (!ready) return null;
+  return <App/>;
+}
+
+ReactDOM.createRoot(document.getElementById("root")).render(<Root/>);
 </script>
 </body>
 </html>
