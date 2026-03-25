@@ -8,6 +8,7 @@
 <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
 <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
 <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
 <!-- Firebase -->
 <script type="module" id="firebase-init">
   import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js";
@@ -187,18 +188,20 @@ function ProgressRing({ percent, size=80, stroke=8, color="#e8b04b" }) {
 }
 
 /* ─── AI Insights ────────────────────────────────────────────────────── */
-function AIInsights({ runs }) {
+function AIInsights({ runs, activities }) {
   const [insight, setInsight] = useState("");
   const [loading, setLoading] = useState(false);
   const [aiTab,   setAiTab]   = useState("training");
   const daysLeft  = getDaysUntilRace();
   const done      = runs.filter(r => r.completed);
-  const totalKm   = done.reduce((s,r) => s + r.distance, 0);
+  const planKm    = done.reduce((s,r) => s + r.distance, 0);
+  const actKm     = (activities || []).reduce((s,a) => s + parseFloat(a.distance || 0), 0);
+  const totalKm   = Math.max(planKm, planKm + actKm);
 
   const getInsight = useCallback(async (topic) => {
     setLoading(true); setAiTab(topic);
     const prompts = {
-      training: `You are an expert marathon running coach. The athlete is training for the Milton Keynes Marathon on 4th May 2026. There are ${daysLeft} days until race day. They have completed ${done.length} training sessions totalling ${totalKm.toFixed(1)}km. Goal: sub 5 hours (pace ~6:30/km). Give a specific, motivating, practical training insight for today in 3–4 sentences. Be direct and personal.`,
+      training: `You are an expert marathon running coach. The athlete is training for the Milton Keynes Marathon on 4th May 2026. There are ${daysLeft} days until race day. They have completed ${done.length} training sessions totalling ${totalKm.toFixed(1)}km across training plan and activity log. Goal: sub 5 hours (pace ~6:30/km). Give a specific, motivating, practical training insight for today in 3–4 sentences. Be direct and personal.`,
       nutrition: `You are a sports nutritionist specialising in endurance running. An athlete is ${daysLeft} days from the Milton Keynes Marathon (4th May 2026). Goal: sub 5 hours. Give specific, practical nutrition advice for this phase — foods, quantities, timing — in 3–4 sentences.`,
       recovery:  `You are an elite marathon coach. The athlete has ${daysLeft} days until their marathon. Give specific recovery advice for this stage — what to prioritise, what to avoid, practical tips. 3–4 sentences, actionable.`,
     };
@@ -248,6 +251,97 @@ function AIInsights({ runs }) {
 }
 
 /* ─── Main App ───────────────────────────────────────────────────────── */
+function RunBreakdownChart({ runs }) {
+  const canvasRef = React.useRef(null);
+  const chartRef  = React.useRef(null);
+
+  const completed = runs.filter(r => r.completed && r.type !== "RACE DAY 🏁");
+
+  const typeTotals = completed.reduce((acc, r) => {
+    acc[r.type] = (acc[r.type] || 0) + r.distance;
+    return acc;
+  }, {});
+
+  const labels   = Object.keys(typeTotals);
+  const data     = Object.values(typeTotals);
+  const colorMap = {
+    "Easy Run":       "#81c784",
+    "Long Run":       "#64b5f6",
+    "Tempo Run":      "#ffb74d",
+    "Intervals":      "#ba68c8",
+    "Marathon Pace":  "#f48fb1",
+    "Easy Shake-out": "#4dd0e1",
+  };
+  const colors = labels.map(l => colorMap[l] || "#ccc");
+
+  useEffect(() => {
+    if (!canvasRef.current || labels.length === 0) return;
+    if (chartRef.current) chartRef.current.destroy();
+    chartRef.current = new Chart(canvasRef.current, {
+      type: "doughnut",
+      data: {
+        labels,
+        datasets: [{
+          data,
+          backgroundColor: colors,
+          borderColor: "#f7f4ef",
+          borderWidth: 3,
+          hoverOffset: 8,
+        }]
+      },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        cutout: "65%",
+        plugins: {
+          legend: { display: false },
+          tooltip: {
+            callbacks: {
+              label: (ctx) => ` ${ctx.label}: ${ctx.parsed.toFixed(1)}km`
+            }
+          }
+        }
+      }
+    });
+    return () => { if (chartRef.current) chartRef.current.destroy(); };
+  }, [runs]);
+
+  if (completed.length === 0) return null;
+
+  const totalDone = data.reduce((s,v) => s+v, 0);
+
+  return (
+    <div style={{background:"white",borderRadius:16,padding:24,border:"1px solid #e5e0d8",marginBottom:28}}>
+      <h4 style={{margin:"0 0 20px",fontFamily:"'Playfair Display',serif",fontSize:18}}>📊 Training Breakdown</h4>
+      <div style={{display:"flex",alignItems:"center",gap:28,flexWrap:"wrap"}}>
+        {/* Doughnut */}
+        <div style={{position:"relative",width:160,height:160,flexShrink:0}}>
+          <canvas ref={canvasRef}/>
+          <div style={{position:"absolute",inset:0,display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",pointerEvents:"none"}}>
+            <div style={{fontSize:22,fontWeight:900,fontFamily:"'Playfair Display',serif",color:"#1a1a2e",lineHeight:1}}>{totalDone.toFixed(1)}</div>
+            <div style={{fontSize:11,color:"#aaa",marginTop:2}}>km done</div>
+          </div>
+        </div>
+        {/* Legend */}
+        <div style={{flex:1,minWidth:160}}>
+          {labels.map((label, i) => (
+            <div key={label} style={{display:"flex",alignItems:"center",justifyContent:"space-between",padding:"6px 0",borderBottom:i<labels.length-1?"1px solid #f5f2ee":"none"}}>
+              <div style={{display:"flex",alignItems:"center",gap:8}}>
+                <div style={{width:10,height:10,borderRadius:"50%",background:colors[i],flexShrink:0}}/>
+                <span style={{fontSize:13,color:"#555"}}>{label}</span>
+              </div>
+              <div style={{textAlign:"right"}}>
+                <span style={{fontSize:13,fontWeight:700,color:"#1a1a2e"}}>{data[i].toFixed(1)}km</span>
+                <span style={{fontSize:11,color:"#aaa",marginLeft:6}}>{Math.round((data[i]/totalDone)*100)}%</span>
+              </div>
+            </div>
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function App() {
   const [fbReady,     setFbReady]     = useState(!!window._fb);
   const [syncStatus,  setSyncStatus]  = useState("loading"); // loading | online | offline
@@ -457,6 +551,7 @@ function App() {
         {/* ═══ SCHEDULE ═══ */}
         {activeTab==="schedule" && (
           <div className="fade-in">
+            <RunBreakdownChart runs={runs}/>
             {Object.entries(weekGroups).map(([week, wRuns]) => {
               const wNum = parseInt(week);
               const isCurrent = wNum === currentWeek;
@@ -520,7 +615,7 @@ function App() {
         {/* ═══ AI COACH ═══ */}
         {activeTab==="insights" && (
           <div className="fade-in">
-            <AIInsights runs={runs}/>
+            <AIInsights runs={runs} activities={activities}/>
             <div className="two-col" style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:16}}>
               <div style={{background:"white",borderRadius:16,padding:24,border:"1px solid #e5e0d8"}}>
                 <h4 style={{margin:"0 0 16px",fontFamily:"'Playfair Display',serif",fontSize:18}}>📊 Your Progress</h4>
